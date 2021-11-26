@@ -1,15 +1,78 @@
-#include<iostream>
-#include<cstring>
-#include<vector>
-#include<deque>
-#include<unordered_map>
 #include<set>
+#include<cmath>
+#include<deque>
+#include<vector>
+#include<cstring>
+#include<iostream>
 #include<unistd.h>
-#include<assert.h>
-#include"data.hpp"
-#include"color.hpp"
+#include<unordered_map>
 
 using namespace std;
+
+//////////////////////////////////////////// COLORS ///////////////////////////////////////////////
+
+#define KNRM  "\x1B[0m"
+#define KRED  "\x1B[31m"
+#define KGRN  "\x1B[32m"
+#define KYEL  "\x1B[33m"
+#define KBLU  "\x1B[34m"
+#define KMAG  "\x1B[35m"
+#define KCYN  "\x1B[36m"
+#define KWHT  "\x1B[37m"
+#define RESET "\033[0m"
+
+/////////////////////////////////////////// DATA: Begin ///////////////////////////////////////////
+/*
+    File System contains:
+        Super Block || file_inode_mapping || inode bitmap || data bitmap || inode blocks (inode table) || data blocks
+
+    Storing the Super block, bitmaps, inode table in data blocks only
+*/
+
+#define DISK_SIZE 536870912             // 512MB
+#define BLOCK_SIZE 1024                 // 1KB
+#define NO_OF_DISK_BLOCKS 524288        // DISK_SIZE/BLOCK_SIZE
+#define NO_OF_INODES 32768              // 1:16KB Ratio 
+#define NO_OF_BLOCK_POINTERS 20
+
+// For 16KB (16384 bytes)       --> one inode
+// For 512MB (536870912 bytes)  --> 536870912/16384 = 32768 inodes
+
+struct file_inode_mapping {
+    char file_name[20];
+    int inode_num;
+};
+
+struct inode {
+    int file_size;
+    // 20 direct pointers to the data blocks
+    int ptr[NO_OF_BLOCK_POINTERS];
+};
+
+// False means block/inode is free
+// True means not free
+bool inode_bitmap[NO_OF_INODES] = { false };
+int no_of_inode_bitmap_blocks = (int)(ceil((float)sizeof(inode_bitmap) / BLOCK_SIZE));
+
+bool disk_bitmap[NO_OF_DISK_BLOCKS] = { false };
+int no_of_disk_bitmap_blocks = (int)(ceil((float)sizeof(disk_bitmap) / BLOCK_SIZE));
+
+
+struct super_block {
+    int no_of_super_block_blocks = (int)(ceil((float)sizeof(struct super_block) / BLOCK_SIZE));
+    int no_of_file_inode_mapping_blocks = (int)(ceil(((float)(sizeof(struct file_inode_mapping) * NO_OF_INODES) / BLOCK_SIZE)));
+    int inode_bitmap_start = no_of_super_block_blocks + no_of_file_inode_mapping_blocks;
+    int disk_bitmap_start = inode_bitmap_start + no_of_inode_bitmap_blocks;
+
+    int inode_blocks_start = disk_bitmap_start + no_of_disk_bitmap_blocks;
+    int no_of_inode_blocks = (int)(ceil(((float)(sizeof(struct inode) * NO_OF_INODES) / BLOCK_SIZE)));
+
+    int data_blocks_start = inode_blocks_start + no_of_inode_blocks;
+    int no_of_available_blocks = NO_OF_DISK_BLOCKS - data_blocks_start;
+};
+
+
+// ======================================= DATA: End ==============================================
 
 string mounted_disk_name;
 
@@ -174,16 +237,16 @@ void open_file() {
 
     int fm;
     while (true) {
-        cout << "Enter file mode (Read = 1, Write = 2, Append = 3): ";
+        cout << "Enter file mode (Read = 0, Write = 1, Append = 2): ";
         cin >> fm;
-        if (fm == 1 || fm == 2 || fm == 3) {
+        if (fm == 0 || fm == 1 || fm == 2) {
             break;
         }
         cout << endl << KYEL "Enter the valid option" RESET << endl;
     }
     int fd;
     // Check if the file descriptor already exists for that file in the given mode
-    if (fm == 1) {
+    if (fm == 0) {
         if (read_files.find(file_name) != read_files.end()) {
             printResult(KYEL "File is already opened in read mode with fd: " + to_string(read_files[file_name]) + RESET);
             return;
@@ -198,7 +261,7 @@ void open_file() {
             printResult(KGRN "File '" + file_name + "' opened in read mode with fd: " + to_string(fd) + RESET);
         }
     }
-    else if (fm == 2) {
+    else if (fm == 1) {
         if (write_files.find(file_name) != write_files.end()) {
             printResult(KYEL "File is already opened in write mode with fd: " + to_string(write_files[file_name]) + RESET);
             return;
@@ -213,7 +276,7 @@ void open_file() {
             printResult(KGRN "File '" + file_name + "' opened in write mode with fd: " + to_string(fd) + RESET);
         }
     }
-    else if (fm == 3) {
+    else if (fm == 2) {
         if (append_files.find(file_name) != append_files.end()) {
             printResult(KYEL "File is already opened in append mode with fd: " + to_string(append_files[file_name]) + RESET);
             return;
