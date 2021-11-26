@@ -111,6 +111,7 @@ bool write_block(string file_name, string block, int block_num, int block_size) 
     int inode_num = file_to_inodes[file_name];
     // Get the data block pointer in the inode block 
     int disk_block_num = inode_arr[inode_num].ptr[block_num];
+    // cout << "Writing to block num: " << disk_block_num << endl;
     // No block allocated to that pointer
     if (disk_block_num == -1) {
         // Get the free data block
@@ -150,7 +151,7 @@ void read_block(int inode_num, int block_num, int block_size) {
     // cout << "Reading " << block_size << " no.of bytes" << endl << endl;
     // Get the data block pointer in the inode block 
     int disk_block_num = inode_arr[inode_num].ptr[block_num];
-
+    // cout << "Read: " << disk_block_num << endl;
     FILE* disk_ptr;
     char buff[block_size];
     memset(buff, 0, block_size);
@@ -364,13 +365,13 @@ void write_file() {
     cin >> fd;
     // Check if the file is opened or not
     if (open_files.find(fd) == open_files.end()) {
-        printResult(KYEL "File with given descirptor: " + to_string(fd) + " doesnot exist" RESET);
+        printResult(KYEL "File with given descriptor: " + to_string(fd) + " doesnot exist" RESET);
         return;
     }
     string file_name = open_files[fd];
     // Check if the file is opened in write mode
     if (write_files.find(file_name) == write_files.end()) {
-        printResult(KYEL "File with given descirptor: " + to_string(fd) + " is not opened in write mode" RESET);
+        printResult(KYEL "File with given descriptor: " + to_string(fd) + " is not opened in write mode" RESET);
         return;
     }
     cout << endl;
@@ -450,18 +451,112 @@ void write_file() {
 }
 
 void append_file() {
+    int fd;
+    cout << "Enter file descriptor: ";
+    cin >> fd;
+    // Check if the file is opened or not
+    if (open_files.find(fd) == open_files.end()) {
+        printResult(KYEL "File with given descriptor: " + to_string(fd) + " doesnot exist" RESET);
+        return;
+    }
+    string file_name = open_files[fd];
+    // Check if the file is opened in write mode
+    if (append_files.find(file_name) == append_files.end()) {
+        printResult(KYEL "File with given descriptor: " + to_string(fd) + " is not opened in append mode" RESET);
+        return;
+    }
+    cout << endl;
+    cout << KCYN "====================" RESET << endl;
     cout << "Enter Data:" << endl;
+    cout << KCYN "====================" RESET << endl;
+
     cout.flush();
     // Read the data from the user
-    string data;
-    while (true) {
-        string line;
-        std::cin.ignore();
-        getline(cin, line);
-        if (line.empty())
+    bool flag = true;
+    string data, line;
+    cin.ignore();
+    while (getline(cin, line)) {
+        if (line == "$")
             break;
-        data += "\n" + line;
+        if (flag) {
+            data += line;
+            flag = false;
+        }
+        else {
+            data += "\n" + line;
+        }
         line.clear();
+    }
+
+    // Find the inode of the file
+    int inode_num = file_to_inodes[file_name];
+
+    // Find the last data block of the file
+    int i;
+    for (i = 0; i < NO_OF_BLOCK_POINTERS; i++) {
+        if (inode_arr[inode_num].ptr[i] == -1) {
+            break;
+        }
+    }
+    int last_block_index = i - 1;
+
+    // Find the disk block number 
+    int disk_block_num = inode_arr[inode_num].ptr[last_block_index];
+
+    FILE* disk_ptr;
+    char buff[BLOCK_SIZE];
+    memset(buff, 0, BLOCK_SIZE);
+
+    // Read the data present in that block 
+    disk_ptr = fopen(&mounted_disk_name[0], "r+b");
+    fseek(disk_ptr, (disk_block_num * BLOCK_SIZE), SEEK_SET);
+    int bytes = fread(buff, sizeof(char), BLOCK_SIZE, disk_ptr);
+    fclose(disk_ptr);
+
+    // cout << "Reading from: " << disk_block_num << endl;
+    string last_block_data;
+    for (int i = 0; i < BLOCK_SIZE; i++) {
+        if (buff[i] != '\0') {
+            // cout << buff[i] << endl;
+            last_block_data += buff[i];
+        }
+    }
+
+    // Find the file size
+    int file_size = inode_arr[inode_num].file_size;
+
+    // Remove the last block size
+    file_size -= last_block_data.length();
+
+    // Append the newly appended data to the last block data
+    last_block_data += "\n" + data;
+    int data_size = last_block_data.length();
+
+    // Now, add the last block size along with the new data
+    file_size += data_size;
+    inode_arr[inode_num].file_size = file_size;
+
+    // Find the details required to add the last_block_data + new_data
+    int no_of_blocks = data_size / BLOCK_SIZE;
+    int last_block_size = BLOCK_SIZE;
+    if (data_size % BLOCK_SIZE != 0) {
+        last_block_size = data_size % BLOCK_SIZE;
+        no_of_blocks++;
+    }
+
+    // cout << last_block_data << endl;
+    // Now write the data from the last_block_index
+    for (int i = 0; i < no_of_blocks; i++) {
+        string block;
+        if (i == no_of_blocks - 1) {
+            block = last_block_data.substr((i * BLOCK_SIZE), (last_block_size));
+            write_block(file_name, block, last_block_index, last_block_size);
+        }
+        else {
+            block = last_block_data.substr((i * BLOCK_SIZE), (BLOCK_SIZE));
+            write_block(file_name, block, last_block_index, BLOCK_SIZE);
+        }
+        last_block_index++;
     }
 }
 
