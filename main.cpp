@@ -106,12 +106,11 @@ void printResult(string result) {
 
 bool write_block(string file_name, string block, int block_num, int block_size) {
     // cout << "Writing " << block_size << " no.of bytes" << endl << endl;
-    // cout << "Writing block: " << block << endl;
+    // cout << "Writing block: " << endl << block << endl;
     // Find the inode number of the file
     int inode_num = file_to_inodes[file_name];
     // Get the data block pointer in the inode block 
     int disk_block_num = inode_arr[inode_num].ptr[block_num];
-    // cout << "Writing to block num: " << disk_block_num << endl;
     // No block allocated to that pointer
     if (disk_block_num == -1) {
         // Get the free data block
@@ -124,6 +123,7 @@ bool write_block(string file_name, string block, int block_num, int block_size) 
         disk_block_num = free_disk_block;
         inode_arr[inode_num].ptr[block_num] = free_disk_block;
     }
+    // cout << "Writing to block num: " << disk_block_num << endl;
     // cout << "Writing to the block: " << disk_block_num << endl;
     int size = BLOCK_SIZE;
     FILE* disk_ptr;
@@ -397,6 +397,22 @@ void write_file() {
         line.clear();
     }
 
+    // Find the inode number
+    int inode_num = file_to_inodes[file_name];
+
+
+    // Delete the existing data and release the data blocks
+    for (int i = 0; i < NO_OF_BLOCK_POINTERS; i++) {
+        int disk_block_num = inode_arr[inode_num].ptr[i];
+        if (disk_block_num != -1) {
+            // cout << disk_block_num << endl;
+            clear_block(disk_block_num);
+            free_disk_blocks.push_back(disk_block_num);
+            inode_arr[inode_num].ptr[i] = -1;
+        }
+    }
+
+
     int data_size = data.length();
     int no_of_blocks = data_size / BLOCK_SIZE;
     int last_block_size = BLOCK_SIZE;
@@ -405,7 +421,6 @@ void write_file() {
         no_of_blocks++;
     }
     // cout << "Writing " << data_size << " no.of bytes" << endl;
-    int inode_num = file_to_inodes[file_name];
     inode_arr[inode_num].file_size = data_size;
 
     // Data can be stored in one block
