@@ -7,7 +7,7 @@
 #include<unistd.h>
 #include<assert.h>
 #include"data.hpp"
-#include"color.h"
+#include"color.hpp"
 
 using namespace std;
 
@@ -42,7 +42,7 @@ void printResult(string result) {
 }
 
 bool write_block(string file_name, string block, int block_num, int block_size) {
-    // cout << "Writing " << block_size << " no.of bytes" << endl;
+    // cout << "Writing " << block_size << " no.of bytes" << endl << endl;
     // cout << "Writing block: " << block << endl;
     // Find the inode number of the file
     int inode_num = file_to_inodes[file_name];
@@ -68,22 +68,23 @@ bool write_block(string file_name, string block, int block_num, int block_size) 
     memset(buff, 0, size);
 
     // Erasing the data present in that block 
-    disk_ptr = fopen(&mounted_disk_name[0], "r+");
+    disk_ptr = fopen(&mounted_disk_name[0], "r+b");
     fseek(disk_ptr, (disk_block_num * BLOCK_SIZE), SEEK_SET);
-    fwrite(buff, 1, block_size, disk_ptr);
+    fwrite(buff, sizeof(char), block_size, disk_ptr);
     fclose(disk_ptr);
 
+    char buff1[block_size];
     // Now write the data into the block
-    strcpy(buff, &block[0]);
-    disk_ptr = fopen(&mounted_disk_name[0], "r+");
+    strcpy(buff1, &block[0]);
+    disk_ptr = fopen(&mounted_disk_name[0], "r+b");
     fseek(disk_ptr, (disk_block_num * BLOCK_SIZE), SEEK_SET);
-    fwrite(buff, 1, block_size, disk_ptr);
+    fwrite(buff1, sizeof(char), block_size, disk_ptr);
     fclose(disk_ptr);
     return true;
 }
 
 void read_block(int inode_num, int block_num, int block_size) {
-    // cout << "Reading " << block_size << " no.of bytes" << endl;
+    // cout << "Reading " << block_size << " no.of bytes" << endl << endl;
     // Get the data block pointer in the inode block 
     int disk_block_num = inode_arr[inode_num].ptr[block_num];
 
@@ -92,14 +93,28 @@ void read_block(int inode_num, int block_num, int block_size) {
     memset(buff, 0, block_size);
 
     // Read the data present in that block 
-    disk_ptr = fopen(&mounted_disk_name[0], "r+");
+    disk_ptr = fopen(&mounted_disk_name[0], "r+b");
     fseek(disk_ptr, (disk_block_num * BLOCK_SIZE), SEEK_SET);
-    fread(buff, 1, block_size, disk_ptr);
+    int bytes = fread(buff, sizeof(char), block_size, disk_ptr);
     fclose(disk_ptr);
 
     // Print data
-    string data = string(buff);
-    cout << data;
+    for (int i = 0; i < block_size; i++)
+        cout << buff[i];
+}
+
+void clear_block(int disk_block_num) {
+    int size = BLOCK_SIZE;
+    FILE* disk_ptr;
+
+    char buff[size];
+    memset(buff, 0, size);
+
+    // Erasing the data present in that block 
+    disk_ptr = fopen(&mounted_disk_name[0], "r+b");
+    fseek(disk_ptr, (disk_block_num * BLOCK_SIZE), SEEK_SET);
+    fwrite(buff, 1, BLOCK_SIZE, disk_ptr);
+    fclose(disk_ptr);
 }
 
 // ===================================== File Operations ==========================================
@@ -267,7 +282,7 @@ void read_file() {
     // cout << "Reading from block: " << disk_block_num << endl;
 
     // char buff[BLOCK_SIZE];
-    // FILE* disk_ptr = fopen(&mounted_disk_name[0], "r+");
+    // FILE* disk_ptr = fopen(&mounted_disk_name[0], "r+b");
     // // Move to the correct location
     // fseek(disk_ptr, (disk_block_num * BLOCK_SIZE), SEEK_SET);
     // fread(buff, 1, BLOCK_SIZE, disk_ptr);
@@ -339,7 +354,7 @@ void write_file() {
     //     char buff[data_size];
     //     strcpy(buff, &data[0]);
     //     // cout << "Buffer: " << buff << endl;
-    //     FILE* disk_ptr = fopen(&mounted_disk_name[0], "r+");
+    //     FILE* disk_ptr = fopen(&mounted_disk_name[0], "r+b");
     //     // Move to the correct location
     //     fseek(disk_ptr, (disk_block_num * BLOCK_SIZE), SEEK_SET);
     //     fwrite(buff, 1, data_size, disk_ptr);
@@ -423,12 +438,46 @@ void close_file() {
 
 void delete_file() {
     string file_name;
+    cout << "Enter file_name: ";
     cin >> file_name;
+    // Check if the file exists or not
     if (file_to_inodes.find(file_name) == file_to_inodes.end()) {
         printResult(KRED "File '" + file_name + "' doesnot exists" RESET);
         return;
     }
 
+    // Check if the file is opened or not.
+    if (read_files.find(file_name) != read_files.end() || write_files.find(file_name) != write_files.end() || append_files.find(file_name) != append_files.end()) {
+        printResult(KYEL "File is currently opened. Close to delete the file" RESET);
+        return;
+    }
+
+    int inode_num = file_to_inodes[file_name];
+    // Deleting the data in the file
+    for (int i = 0; i < NO_OF_BLOCK_POINTERS; i++) {
+        int disk_block_num = inode_arr[inode_num].ptr[i];
+        if (disk_block_num == -1) {
+            break;
+        }
+        // Clear the block
+        clear_block(disk_block_num);
+        // Remove the data block pointer in the inode
+        inode_arr[inode_num].ptr[i] = -1;
+        // Add that disk_block to free_disk_blocks vector
+        free_disk_blocks.push_back(disk_block_num);
+    }
+
+    // Removing from file_to_inode_mapping
+    strcpy(files[inode_num].file_name, "");
+    files[inode_num].inode_num = -1;
+
+    // Add the inode to the free_inodes vector
+    free_inodes.push_back(inode_num);
+
+    // After all blocks are cleared, then remove the file name
+    file_to_inodes.erase(file_name);
+
+    printResult(KGRN "File '" + file_name + "' deleted successfully" RESET);
 }
 
 void list_files() {
@@ -492,7 +541,7 @@ bool unmount_disk() {
     char fim_buff[size];
     memset(fim_buff, 0, size);
     memcpy(fim_buff, files, size);
-    disk_ptr = fopen(&mounted_disk_name[0], "r+");
+    disk_ptr = fopen(&mounted_disk_name[0], "r+b");
     fseek(disk_ptr, (sb.no_of_super_block_blocks * BLOCK_SIZE), SEEK_SET);
     fwrite(fim_buff, 1, size, disk_ptr);
     fclose(disk_ptr);
@@ -525,7 +574,7 @@ bool unmount_disk() {
     size = sizeof(tmp_inode_bitmap);
     char tib_buff[size];
     memcpy(tib_buff, tmp_inode_bitmap, size);
-    disk_ptr = fopen(&mounted_disk_name[0], "r+");
+    disk_ptr = fopen(&mounted_disk_name[0], "r+b");
     fseek(disk_ptr, (sb.inode_bitmap_start * BLOCK_SIZE), SEEK_SET);
     fwrite(tib_buff, 1, size, disk_ptr);
     fclose(disk_ptr);
@@ -534,7 +583,7 @@ bool unmount_disk() {
     size = sizeof(tmp_disk_bitmap);
     char tdb_buff[size];
     memcpy(tdb_buff, tmp_disk_bitmap, size);
-    disk_ptr = fopen(&mounted_disk_name[0], "r+");
+    disk_ptr = fopen(&mounted_disk_name[0], "r+b");
     fseek(disk_ptr, (sb.disk_bitmap_start * BLOCK_SIZE), SEEK_SET);
     fwrite(tdb_buff, 1, size, disk_ptr);
     fclose(disk_ptr);
@@ -549,7 +598,7 @@ bool unmount_disk() {
     size = sizeof(inode_arr);
     char iarr_buff[size];
     memcpy(iarr_buff, inode_arr, size);
-    disk_ptr = fopen(&mounted_disk_name[0], "r+");
+    disk_ptr = fopen(&mounted_disk_name[0], "r+b");
     fseek(disk_ptr, sb.inode_blocks_start * BLOCK_SIZE, SEEK_SET);
     fwrite(iarr_buff, 1, size, disk_ptr);
     fclose(disk_ptr);
@@ -561,7 +610,7 @@ bool unmount_disk() {
     // char fim_buff[size];
     // size = sizeof(files);
     // memset(fim_buff1, 0, size);
-    // disk_ptr = fopen(&mounted_disk_name[0], "r+");
+    // disk_ptr = fopen(&mounted_disk_name[0], "r+b");
     // cout << "Before unmounting:" << endl;
     // if (disk_ptr == NULL) {
     //     perror("file not oepene dude");
@@ -674,7 +723,7 @@ void create_disk(string& disk_name) {
     memset(sb_buff, 0, size);
     memcpy(sb_buff, &sb, size);
     // cout << "super_block" << sb_buff << endl;
-    disk_ptr = fopen(&disk_name[0], "r+");
+    disk_ptr = fopen(&disk_name[0], "r+b");
     fseek(disk_ptr, 0, SEEK_SET);
     fwrite(sb_buff, 1, size, disk_ptr);
     fclose(disk_ptr);
@@ -685,13 +734,13 @@ void create_disk(string& disk_name) {
     memset(fim_buff, 0, size);
     memcpy(fim_buff, files, size);
     // cout << "file_inode_mapping " << fim_buff << endl;
-    disk_ptr = fopen(&disk_name[0], "r+");
+    disk_ptr = fopen(&disk_name[0], "r+b");
     fseek(disk_ptr, sb.no_of_super_block_blocks * BLOCK_SIZE, SEEK_SET);
     fwrite(fim_buff, 1, size, disk_ptr);
     fclose(disk_ptr);
 
     // // ==========================================
-    // disk_ptr = fopen(&disk_name[0], "r+");
+    // disk_ptr = fopen(&disk_name[0], "r+b");
     // memset(fim_buff, 1, size);
     // fseek(disk_ptr, sb.no_of_super_block_blocks * BLOCK_SIZE, SEEK_SET);
     // fread(fim_buff, 1, size, disk_ptr);
@@ -708,7 +757,7 @@ void create_disk(string& disk_name) {
     char tib_buff[size];
     memset(tib_buff, 0, size);
     memcpy(tib_buff, inode_bitmap, size);
-    disk_ptr = fopen(&disk_name[0], "r+");
+    disk_ptr = fopen(&disk_name[0], "r+b");
     fseek(disk_ptr, sb.inode_bitmap_start * BLOCK_SIZE, SEEK_SET);
     fwrite(tib_buff, 1, size, disk_ptr);
     fclose(disk_ptr);
@@ -726,7 +775,7 @@ void create_disk(string& disk_name) {
     char tdb_buff[size];
     memset(tdb_buff, 0, size);
     memcpy(tdb_buff, tmp_disk_bitmap, size);
-    disk_ptr = fopen(&disk_name[0], "r+");
+    disk_ptr = fopen(&disk_name[0], "r+b");
     fseek(disk_ptr, sb.disk_bitmap_start * BLOCK_SIZE, SEEK_SET);
     fwrite(tdb_buff, 1, size, disk_ptr);
     fclose(disk_ptr);
@@ -743,7 +792,7 @@ void create_disk(string& disk_name) {
     char iarr_buff[size];
     memset(iarr_buff, 0, size);
     memcpy(iarr_buff, inode_arr, size);
-    disk_ptr = fopen(&disk_name[0], "r+");
+    disk_ptr = fopen(&disk_name[0], "r+b");
     fseek(disk_ptr, sb.inode_blocks_start * BLOCK_SIZE, SEEK_SET);
     fwrite(iarr_buff, 1, size, disk_ptr);
     fclose(disk_ptr);
@@ -766,7 +815,7 @@ void mount_disk(string& disk_name) {
     size = sizeof(struct super_block);
     char sb_buff[size];
     memset(sb_buff, 0, size);
-    disk_ptr = fopen(&disk_name[0], "r+");
+    disk_ptr = fopen(&disk_name[0], "r+b");
     fseek(disk_ptr, 0, SEEK_SET);
     fread(sb_buff, 1, size, disk_ptr);
     memcpy(&sb, sb_buff, size);
@@ -776,7 +825,7 @@ void mount_disk(string& disk_name) {
     size = sizeof(files);
     char fim_buff[size];
     memset(fim_buff, 0, size);
-    disk_ptr = fopen(&disk_name[0], "r+");
+    disk_ptr = fopen(&disk_name[0], "r+b");
     fseek(disk_ptr, sb.no_of_super_block_blocks * BLOCK_SIZE, SEEK_SET);
     fread(fim_buff, 1, size, disk_ptr);
     // cout << "file_inode_mapping_buff: " << fim_buff << endl;
@@ -791,7 +840,7 @@ void mount_disk(string& disk_name) {
     size = sizeof(tmp_inode_bitmap);
     char tib_buff[size];
     memset(tib_buff, 0, size);
-    disk_ptr = fopen(&disk_name[0], "r+");
+    disk_ptr = fopen(&disk_name[0], "r+b");
     fseek(disk_ptr, sb.inode_bitmap_start * BLOCK_SIZE, SEEK_SET);
     fread(tib_buff, 1, size, disk_ptr);
     memcpy(tmp_inode_bitmap, tib_buff, size);
@@ -801,7 +850,7 @@ void mount_disk(string& disk_name) {
     size = sizeof(tmp_disk_bitmap);
     char tdb_buff[size];
     memset(tdb_buff, 0, size);
-    disk_ptr = fopen(&disk_name[0], "r+");
+    disk_ptr = fopen(&disk_name[0], "r+b");
     fseek(disk_ptr, sb.disk_bitmap_start * BLOCK_SIZE, SEEK_SET);
     fread(tdb_buff, 1, size, disk_ptr);
     memcpy(tmp_disk_bitmap, tdb_buff, size);
@@ -811,7 +860,7 @@ void mount_disk(string& disk_name) {
     size = sizeof(inode_arr);
     char iarr_buff[size];
     memset(iarr_buff, 0, size);
-    disk_ptr = fopen(&disk_name[0], "r+");
+    disk_ptr = fopen(&disk_name[0], "r+b");
     fseek(disk_ptr, sb.inode_blocks_start * BLOCK_SIZE, SEEK_SET);
     fread(iarr_buff, 1, size, disk_ptr);
     memcpy(inode_arr, iarr_buff, size);
