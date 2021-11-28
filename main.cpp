@@ -34,6 +34,7 @@ using namespace std;
 #define NO_OF_DISK_BLOCKS 524288        // DISK_SIZE/BLOCK_SIZE
 #define NO_OF_INODES 32768              // 1:16KB Ratio 
 #define NO_OF_BLOCK_POINTERS 20
+#define NO_OF_DESCRIPTORS 10
 
 // For 16KB (16384 bytes)       --> one inode
 // For 512MB (536870912 bytes)  --> 536870912/16384 = 32768 inodes
@@ -305,7 +306,7 @@ void read_file() {
     }
     string file_name = open_files[fd];
     // Check if the file is opened in write mode
-    if (read_files.find(file_name) == read_files.end()) {
+    if (read_files.find(file_name) == read_files.end() || read_files[file_name] != fd) {
         printResult(KYEL "File with given descriptor: " + to_string(fd) + " is not opened in read mode" RESET);
         return;
     }
@@ -370,7 +371,7 @@ void write_file() {
     }
     string file_name = open_files[fd];
     // Check if the file is opened in write mode
-    if (write_files.find(file_name) == write_files.end()) {
+    if (write_files.find(file_name) == write_files.end() || write_files[file_name] != fd) {
         printResult(KYEL "File with given descriptor: " + to_string(fd) + " is not opened in write mode" RESET);
         return;
     }
@@ -476,7 +477,7 @@ void append_file() {
     }
     string file_name = open_files[fd];
     // Check if the file is opened in write mode
-    if (append_files.find(file_name) == append_files.end()) {
+    if (append_files.find(file_name) == append_files.end() || append_files[file_name] != fd) {
         printResult(KYEL "File with given descriptor: " + to_string(fd) + " is not opened in append mode" RESET);
         return;
     }
@@ -611,7 +612,7 @@ void close_file() {
 
 void delete_file() {
     string file_name;
-    cout << "Enter file_name: ";
+    cout << "Enter file name: ";
     cin >> file_name;
     // Check if the file exists or not
     if (file_to_inodes.find(file_name) == file_to_inodes.end()) {
@@ -700,15 +701,6 @@ bool unmount_disk() {
     FILE* disk_ptr;
     int size;
 
-    // cout << "Before sb" << endl;
-    // Clearing super_block
-    // size = sizeof(super_block);
-    // char sb_buff[size];
-    // memset(sb_buff, 0, size);
-    // memcpy(&sb, sb_buff, size);
-
-    // cout << "After sb" << endl;
-
     // Store back the file_inode_mapping
     size = sizeof(files);
     char fim_buff[size];
@@ -779,25 +771,6 @@ bool unmount_disk() {
     // Clear the inode_arr
     memset(iarr_buff, 0, size);
     memcpy(inode_arr, iarr_buff, size);
-
-    // char fim_buff[size];
-    // size = sizeof(files);
-    // memset(fim_buff1, 0, size);
-    // disk_ptr = fopen(&mounted_disk_name[0], "r+b");
-    // cout << "Before unmounting:" << endl;
-    // if (disk_ptr == NULL) {
-    //     perror("file not oepene dude");
-    //     // cout << "File not openeed dude" << endl;
-    // }
-    // fseek(disk_ptr, sb.no_of_super_block_blocks * BLOCK_SIZE, SEEK_SET);
-    // fread(fim_buff1, 1, size, disk_ptr);
-    // cout << "file_inode_mapping_buff: " << fim_buff1 << endl;
-    // memcpy(files, fim_buff1, size);
-    // for (int i = 0; i < NO_OF_INODES; i++) {
-    //     cout << files[i].file_name << endl;
-    // }
-    // cout << "========" << endl;
-    // fclose(disk_ptr);
 
     // cout << "After inode_arr" << endl;
     free_disk_blocks.clear();
@@ -1061,7 +1034,7 @@ void mount_disk(string& disk_name) {
     }
 
     // Storing the file descriptors
-    for (int i = 1; i <= 10; i++) {
+    for (int i = 1; i <= NO_OF_DESCRIPTORS; i++) {
         file_descriptors.insert(i);
     }
 
